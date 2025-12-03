@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fullscreen YouTube Autoplay</title>
+  <style>
+    html,body {
+      height:100%;
+      margin:0;
+      background:#000;
+      overflow:hidden;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+      color:#fff;
+    }
+    /* make the player fill the viewport */
+    #player, #player iframe {
+      position:fixed;
+      top:0;
+      left:0;
+      width:100vw;
+      height:100vh;
+      border:0;
+      margin:0;
+      padding:0;
+    }
+
+    /* overlay shown when autoplay blocked or user can request sound+fullscreen */
+    #overlay {
+      position:fixed;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:rgba(0,0,0,0.35);
+      z-index:10;
+      gap:20px;
+      flex-direction:column;
+      text-align:center;
+    }
+    #startBtn {
+      background: #1f6feb;
+      border: none;
+      color: white;
+      padding: 14px 22px;
+      font-size: 18px;
+      border-radius: 10px;
+      cursor:pointer;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    }
+    #hint { max-width:640px; padding:0 20px; font-size:15px; opacity:0.95 }
+    #small {
+      position:fixed;
+      left:12px;
+      bottom:12px;
+      font-size:12px;
+      opacity:0.8;
+      z-index:11;
+    }
+  </style>
+</head>
+<body>
+  <!-- The YouTube player will replace this div -->
+  <div id="player"></div>
+
+  <!-- Overlay appears if user action required (autoplay blocked) -->
+  <div id="overlay" hidden>
+    <div id="hint">
+      Autoplay with sound is blocked by your browser. Tap the button to enter fullscreen and play with sound.
+    </div>
+    <button id="startBtn">Play with sound & fullscreen</button>
+  </div>
+
+  <div id="small">Video will start muted automatically if allowed by your browser.</div>
+
+  <!-- Load YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    // Video ID from your embed: kou9yRSpVOY
+    const VIDEO_ID = 'kou9yRSpVOY';
+
+    let player;
+    let autoplaySucceeded = false;
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: VIDEO_ID,
+        playerVars: {
+          autoplay: 1,        // request autoplay
+          controls: 0,        // hide controls
+          rel: 0,             // no related at end (best effort)
+          modestbranding: 1,
+          playsinline: 1,
+          iv_load_policy: 3,
+          mute: 1             // start muted so autoplay is allowed in most browsers
+        },
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange,
+          'onError': onPlayerError
+        }
+      });
+    }
+
+    function onPlayerReady(e) {
+      // Try to play immediately. Many browsers will allow muted autoplay.
+      attemptPlay();
+      // Try to request fullscreen (may be blocked without user gesture).
+      tryRequestFullscreen();
+      // If autoplay is blocked, we'll reveal overlay after a short delay.
+      setTimeout(checkAutoplay, 900);
+    }
+
+    function attemptPlay() {
+      if (!player) return;
+      try {
+        player.playVideo();
+      } catch (err) {
+        // ignore — we'll show overlay
+      }
+    }
+
+    function tryRequestFullscreen() {
+      const el = document.documentElement;
+      if (el.requestFullscreen) {
+        try { el.requestFullscreen().catch(()=>{}); } catch(e){}
+      } else if (el.webkitRequestFullscreen) {
+        try { el.webkitRequestFullscreen(); } catch(e){}
+      }
+    }
+
+    function checkAutoplay() {
+      // If player state is not playing, assume autoplay blocked and show overlay
+      const state = player && typeof player.getPlayerState === 'function' ? player.getPlayerState() : -2;
+      // YT states: -1 (unstarted), 0 ended, 1 playing, 2 paused, 3 buffering
+      if (state !== 1) {
+        showOverlay();
+      } else {
+        autoplaySucceeded = true;
+        // keep muted if autoplay succeeded; user can unmute via controls overlay button
+      }
+    }
+
+    function showOverlay() {
+      document.getElementById('overlay').hidden = false;
+    }
+
+    function hideOverlay() {
+      document.getElementById('overlay').hidden = true;
+    }
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      // Try to enter fullscreen on user gesture (browsers allow this)
+      tryRequestFullscreen();
+      // Unmute & play
+      if (player && typeof player.unMute === 'function') {
+        player.unMute();
+        player.playVideo();
+      } else {
+        // fallback: reload iframe with unmuted autoplay param (not guaranteed)
+        window.location.href = `https://www.youtube.com/embed/${VIDEO_ID}?autoplay=1&controls=0&rel=0&modestbranding=1&playsinline=1`;
+      }
+      hideOverlay();
+    });
+
+    function onPlayerStateChange(event) {
+      // If video started playing, hide overlay
+      if (event.data === YT.PlayerState.PLAYING) {
+        hideOverlay();
+      }
+    }
+
+    function onPlayerError(e) {
+      console.error('YouTube player error', e);
+      // show overlay to allow the user to try play manually
+      showOverlay();
+    }
+
+    // If user presses ESC (exits fullscreen) we keep video visible but not fullscreen.
+    document.addEventListener('fullscreenchange', () => {
+      // nothing required here, but you could show a UI hint if needed
+    });
+  </script>
+</body>
+</html>
